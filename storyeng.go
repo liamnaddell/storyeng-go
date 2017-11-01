@@ -1,6 +1,7 @@
 package storyeng
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"github.com/mitchellh/go-homedir"
@@ -73,10 +74,10 @@ var actions Actions
 
 //let data = ...
 type data struct {
-	Parts    parts
-	Current  string
-	Previous string
-	Name     string
+	Parts    parts  `json:"parts"`
+	Current  string `json:"current"`
+	Previous string `json:"previous"`
+	Name     string `json:"name"`
 }
 
 var Data = data{Name: "friend"}
@@ -156,8 +157,12 @@ func (c *cache) make() {
 		_ = os.Mkdir(c.Path, 755)
 	}
 }
-func (c *cache) save(data string) {
-	err := ioutil.WriteFile(c.Data, []byte(data), 755)
+func (c *cache) save(data data) {
+	dat, err := json.Marshal(data)
+	if err != nil {
+		panic(err)
+	}
+	err = ioutil.WriteFile(c.Data, dat, 755)
 	if err != nil {
 		panic(err)
 	}
@@ -207,6 +212,8 @@ type inputEvent struct {
 	Empty    bool
 	Lower    string
 	Crunched string
+	Yes      bool
+	No       bool
 }
 
 func NewInputEvent() *inputEvent {
@@ -219,8 +226,24 @@ func NewInputEvent() *inputEvent {
 	}
 	lower := strings.ToLower(line)
 	crunched := crunch(line)
+	var Yes, No bool
 	//I have no idea bout yes/no/action
-	return &inputEvent{line, empty, lower, crunched}
+	for i := 0; i < len(yes); i++ {
+		s := strings.Split(lower, yes[i])
+		fmt.Println("DEBUG:", s)
+		if len(s) > 2 {
+			Yes = true
+		}
+	}
+	for i := 0; i < len(no); i++ {
+		s := strings.Split(lower, no[i])
+		fmt.Println("DEBUG:", s)
+		if len(s) > 2 {
+			No = true
+		}
+	}
+
+	return &inputEvent{line, empty, lower, crunched, Yes, No}
 }
 func (i *inputEvent) actionFor() {
 	fmt.Println("TODO")
@@ -229,7 +252,50 @@ func (i *inputEvent) actionFor() {
 var yes = []string{"yes"}
 var no = []string{"no"}
 
-//todo colors
+var c = make(map[string]string)
+
+func PopulateColors() {
+	if isPosix {
+		c["b03"] = "\x1b[1;30m"
+		c["b02"] = "\x1b[0;30m"
+		c["b01"] = "\x1b[1;32m"
+		c["b00"] = "\x1b[1;33m"
+		c["b0"] = "\x1b[1;33m"
+		c["b1"] = "\x1b[1;34m"
+		c["b2"] = "\x1b[0;37m"
+		c["b3"] = "\x1b[1;37m"
+		c["y"] = "\x1b[0;33m"
+		c["o"] = "\x1b[1;31m"
+		c["r"] = "\x1b[0;31m"
+		c["m"] = "\x1b[0;35m"
+		c["v"] = "\x1b[1;35m"
+		c["b"] = "\x1b[0;34m"
+		c["c"] = "\x1b[0;36m"
+		c["g"] = "\x1b[0;32m"
+		c["x"] = "\x1b[0m"
+		c["l"] = "\x1b[2K\x1b[G"
+		c["c"] = "\x1b[2J\x1b[H"
+	} else {
+		c["b03"] = ""
+		c["b02"] = ""
+		c["b01"] = ""
+		c["b00"] = ""
+		c["b2"] = ""
+		c["b0"] = ""
+		c["b3"] = ""
+		c["y"] = ""
+		c["o"] = ""
+		c["r"] = ""
+		c["m"] = ""
+		c["v"] = ""
+		c["b"] = ""
+		c["c"] = ""
+		c["g"] = ""
+		c["x"] = ""
+		c["l"] = ""
+		c["c"] = ""
+	}
+}
 
 type themePrompt struct {
 	text  string
@@ -237,7 +303,7 @@ type themePrompt struct {
 }
 
 func newthemePrompt() *themePrompt {
-	return &themePrompt{"--->", "TODO"}
+	return &themePrompt{"--->", c["b3"]}
 }
 
 type themeInput struct {
@@ -245,7 +311,7 @@ type themeInput struct {
 }
 
 func newthemeInput() *themeInput {
-	return &themeInput{"TODO"}
+	return &themeInput{c["y"]}
 }
 
 type themeTell struct {
@@ -254,12 +320,16 @@ type themeTell struct {
 }
 
 func newthemeTell() *themeTell {
-	var color = "TODO"
+	var color = c["b0"]
 	var wrap bool
 	return &themeTell{color, wrap}
 }
 
 type themeMessages struct {
+	nopart  string
+	bye     string
+	nostart string
+	restart string
 }
 
 type theme struct {
@@ -273,10 +343,96 @@ func NewTheme() *theme {
 	return &theme{newthemePrompt(), newthemeInput(), newthemeTell(), new(themeMessages)}
 }
 
-func init() {
-	OsTest()
+var Theme = NewTheme()
+
+func SetThemeStuff() {
+	Theme.msgs.nopart = "**I'm sorry. The author has not written the next part yet.**"
+	Theme.msgs.bye = "Sorry to see you go, {name}. See you soon."
+	Theme.msgs.nostart = "It appears the author has not added the required *Start* part."
+	Theme.msgs.restart = "Do you really want to delete your data and restart?"
 }
 
+func clear() {
+	fmt.Println(c["clear"])
+}
+func format(s string) {
+	fmt.Println("TODOODODODO")
+}
+func tells(s string) {
+	fmt.Println("TOOTOODO")
+}
+func tell(s string) {
+	fmt.Println(s)
+}
+func show(s string) {
+	fmt.Println(strings.TrimSpace(s))
+}
+func quit() {
+	tell(Theme.msgs.bye)
+	Cache.save(Data)
+	os.Exit(0)
+}
+func leave(part part) {
+	onleave := part["onleave"]
+	var e = NewEvent()
+	switch onleave.(type) {
+	case func(*event) string:
+		s := onleave.(func(*event) string)(e)
+		tell(s)
+	case string:
+		tell(onleave.(string))
+	}
+
+}
+func enter(part part) {
+	onleave := part["onleave"]
+	var e = NewEvent()
+	switch onleave.(type) {
+	case func(*event) string:
+		rv := onleave.(func(*event) string)(e)
+		tell(rv)
+
+	case string:
+		tell(onleave.(string))
+	}
+
+}
+
+//don't know how to translate actions.X stuff
+//or actions.also stuffz
+
+//what is rl.on?
+var rl = bufio.NewScanner(os.Stdin)
+
+func update() {
+	clear()
+	if previous != "" {
+		var prevpart = Parts[previous]
+		Data.Previous = previous
+		leave(prevpart)
+	}
+	var part = Parts[current]
+	Data.Current = current
+	enter(part)
+	rl.Scan()
+	fmt.Println(rl.Text())
+
+}
+
+func Go(name string) {
+	if Parts[name] != nil {
+		tell(Theme.msgs.nopart)
+		return
+	}
+	previous = current
+	current = name
+	Cache.save(Data)
+	update()
+}
+func init() {
+	OsTest()
+	PopulateColors()
+}
 func debug(msg string) {
 	if isDebug {
 		fmt.Println(msg)
